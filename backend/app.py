@@ -149,6 +149,21 @@ def generate_quiz(chapter_id):
     
     return jsonify({'message': 'Quiz generated successfully', 'quiz_id': new_quiz.quiz_id}), 201
 
+@app.route('/add_chapter', methods=['POST'])
+def add_chapter():
+    data = request.get_json()
+    title = data.get("title")
+    description = data.get("description")
+
+    if not title or not description:
+        return jsonify({"error": "Title and description are required"}), 400
+
+    new_chapter = Chapter(title=title, description=description)
+    db.session.add(new_chapter)
+    db.session.commit()
+
+    return jsonify({"message": "Chapter added successfully", "chapter_id": new_chapter.id}), 201
+
 @app.route('/chapter-status/<int:user_id>/<int:chapter_id>', methods=['GET'])
 def check_chapter_completion(user_id, chapter_id):
     total_lessons = Lesson.query.filter_by(chapter_id=chapter_id).count()
