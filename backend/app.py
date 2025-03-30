@@ -164,8 +164,21 @@ def add_chapter():
 @app.route('/progress/<int:user_id>', methods=['GET'])
 def get_user_progress(user_id):
     progress = UserCurrentProgress.query.filter_by(user_id=user_id).first()
+    
+    # If no progress exists, create a starting progress
     if not progress:
-        return jsonify({"error": "Progress not found"}), 404
+        first_lesson = Lesson.query.order_by(Lesson.lesson_id.asc()).first()
+        if not first_lesson:
+            return jsonify({"error": "No lessons available"}), 404
+        
+        progress = UserCurrentProgress(
+            user_id=user_id,
+            current_chapter_id=first_lesson.chapter_id,
+            current_lesson_id=first_lesson.lesson_id
+        )
+        db.session.add(progress)
+        db.session.commit()
+
     return jsonify({
         "user_id": user_id,
         "current_chapter_id": progress.current_chapter_id,
