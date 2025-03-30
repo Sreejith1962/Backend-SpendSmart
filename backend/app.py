@@ -113,18 +113,25 @@ class UserQuizProgress(db.Model):
     quiz_id = db.Column(db.Integer, db.ForeignKey('quiz.quiz_id'), nullable=False)
     score = db.Column(db.Integer)
     passed = db.Column(db.Boolean, default=False)
-@app.route("/add_lessons", methods=["POST"])
-def add_lessons():
+
+
+@app.route('/add_lesson', methods=['POST'])
+def add_lesson():
     data = request.get_json()
-    new_lesson = Lesson(
-        chapter_id=data["chapter_id"],
-        title=data["title"],
-        content=data["content"],
-        quiz_id=data.get("quiz_id")  # Optional field
-    )
+    chapter_id = data.get("chapter_id")
+    title = data.get("title")
+    content = data.get("content")
+    quiz_id = data.get("quiz_id", None)  # Optional quiz_id
+
+    if not chapter_id or not title or not content:
+        return jsonify({"error": "Chapter ID, title, and content are required"}), 400
+
+    new_lesson = Lesson(chapter_id=chapter_id, title=title, content=content, quiz_id=quiz_id)
     db.session.add(new_lesson)
     db.session.commit()
-    return jsonify({"message": "Lesson added successfully!"}), 201
+
+    return jsonify({"message": "Lesson added successfully", "lesson_id": new_lesson.lesson_id}), 201
+
 import google.generativeai as genai
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -153,16 +160,16 @@ def generate_quiz(chapter_id):
 def add_chapter():
     data = request.get_json()
     title = data.get("title")
-    description = data.get("description")
 
-    if not title or not description:
-        return jsonify({"error": "Title and description are required"}), 400
+    if not title:
+        return jsonify({"error": "Title is required"}), 400
 
-    new_chapter = Chapter(title=title, description=description)
+    new_chapter = Chapter(title=title)
     db.session.add(new_chapter)
     db.session.commit()
 
-    return jsonify({"message": "Chapter added successfully", "chapter_id": new_chapter.id}), 201
+    return jsonify({"message": "Chapter added successfully", "chapter_id": new_chapter.chapter_id}), 201
+
 
 @app.route('/chapter-status/<int:user_id>/<int:chapter_id>', methods=['GET'])
 def check_chapter_completion(user_id, chapter_id):
