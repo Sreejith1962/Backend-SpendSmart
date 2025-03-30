@@ -177,10 +177,12 @@ def get_chapters():
     chapters = Chapter.query.all()
     return jsonify([{ "chapter_id": c.chapter_id, "title": c.title } for c in chapters])
 
+
 @app.route('/lessons/<int:chapter_id>', methods=['GET'])
 def get_lessons(chapter_id):
-    lessons = Lesson.query.filter_by(chapter_id=chapter_id).all()
-    return jsonify([{ "lesson_id": l.lesson_id, "title": l.title , "content": l.content} for l in lessons])
+    lessons = Lesson.query.filter_by(chapter_id=chapter_id).order_by(Lesson.lesson_id.asc()).all()
+    return jsonify([{"lesson_id": l.lesson_id, "title": l.title, "content": l.content} for l in lessons])
+
 
 @app.route('/progress/update', methods=['POST'])
 def update_progress():
@@ -193,27 +195,41 @@ def update_progress():
     if not lesson:
         return jsonify({"error": "Lesson not found"}), 404
 
-    # Fetch the corresponding chapter of the lesson
-    chapter_id = lesson.chapter_id  # Assuming Lesson has a foreign key to Chapter
+    chapter_id = lesson.chapter_id  
 
-    # Check if user progress exists
+    # Get user progress
     progress = UserCurrentProgress.query.filter_by(user_id=user_id).first()
 
     if not progress:
-        # If no progress exists, create a new entry with a valid chapter_id
+        # No progress exists, start from first chapter/lesson
+        first_lesson = Lesson.query.filter_by(chapter_id=1).order_by(Lesson.lesson_id.asc()).first()
+        if not first_lesson:
+            return jsonify({"error": "No lessons found"}), 404
+        
         progress = UserCurrentProgress(
             user_id=user_id,
-            current_chapter_id=chapter_id,  # Ensure this is set
-            current_lesson_id=new_lesson_id
+            current_chapter_id=1,
+            current_lesson_id=first_lesson.lesson_id
         )
         db.session.add(progress)
     else:
-        # Update existing progress
-        progress.current_chapter_id = chapter_id  # Ensure chapter is updated
-        progress.current_lesson_id = new_lesson_id
+        # Get the list of lessons in the current chapter
+        lessons_in_chapter = Lesson.query.filter_by(chapter_id=progress.current_chapter_id).order_by(Lesson.lesson_id.asc()).all()
+        lesson_ids = [l.lesson_id for l in lessons_in_chapter]
+
+        if new_lesson_id not in lesson_ids:
+            return jsonify({"error": "Invalid lesson for current chapter"}), 400
+
+        # Ensure the user is progressing to the correct next lesson
+        current_index = lesson_ids.index(progress.current_lesson_id) if progress.current_lesson_id in lesson_ids else -1
+
+        if current_index + 1 < len(lesson_ids) and lesson_ids[current_index + 1] == new_lesson_id:
+            progress.current_lesson_id = new_lesson_id
+        else:
+            return jsonify({"error": "Invalid lesson progression"}), 400
 
     db.session.commit()
-    return jsonify({"message": "Progress updated", "new_lesson_id": new_lesson_id, "new_chapter_id": chapter_id})
+    return jsonify({"message": "Progress updated", "new_lesson_id": progress.current_lesson_id, "new_chapter_id": progress.current_chapter_id})
 
 @app.route('/progress/complete_quiz', methods=['POST'])
 def complete_quiz():
