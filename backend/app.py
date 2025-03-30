@@ -193,19 +193,27 @@ def update_progress():
     if not lesson:
         return jsonify({"error": "Lesson not found"}), 404
 
+    # Fetch the corresponding chapter of the lesson
+    chapter_id = lesson.chapter_id  # Assuming Lesson has a foreign key to Chapter
+
     # Check if user progress exists
     progress = UserCurrentProgress.query.filter_by(user_id=user_id).first()
 
     if not progress:
-        # If no progress exists, create a new entry
-        progress = UserCurrentProgress(user_id=user_id, current_lesson_id=new_lesson_id)
+        # If no progress exists, create a new entry with a valid chapter_id
+        progress = UserCurrentProgress(
+            user_id=user_id,
+            current_chapter_id=chapter_id,  # Ensure this is set
+            current_lesson_id=new_lesson_id
+        )
         db.session.add(progress)
     else:
         # Update existing progress
+        progress.current_chapter_id = chapter_id  # Ensure chapter is updated
         progress.current_lesson_id = new_lesson_id
 
     db.session.commit()
-    return jsonify({"message": "Progress updated", "new_lesson_id": new_lesson_id})
+    return jsonify({"message": "Progress updated", "new_lesson_id": new_lesson_id, "new_chapter_id": chapter_id})
 
 @app.route('/progress/complete_quiz', methods=['POST'])
 def complete_quiz():
