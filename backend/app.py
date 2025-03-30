@@ -187,13 +187,23 @@ def update_progress():
     data = request.json
     user_id = data.get("user_id")
     new_lesson_id = data.get("lesson_id")
+
+    # Check if the lesson exists
     lesson = Lesson.query.get(new_lesson_id)
     if not lesson:
         return jsonify({"error": "Lesson not found"}), 404
+
+    # Check if user progress exists
     progress = UserCurrentProgress.query.filter_by(user_id=user_id).first()
+
     if not progress:
-        return jsonify({"error": "User progress not found"}), 404
-    progress.current_lesson_id = new_lesson_id
+        # If no progress exists, create a new entry
+        progress = UserCurrentProgress(user_id=user_id, current_lesson_id=new_lesson_id)
+        db.session.add(progress)
+    else:
+        # Update existing progress
+        progress.current_lesson_id = new_lesson_id
+
     db.session.commit()
     return jsonify({"message": "Progress updated", "new_lesson_id": new_lesson_id})
 
