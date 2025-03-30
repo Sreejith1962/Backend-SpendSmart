@@ -237,10 +237,15 @@ def update_progress():
         # Ensure the user is progressing to the correct next lesson
         current_index = lesson_ids.index(progress.current_lesson_id) if progress.current_lesson_id in lesson_ids else -1
 
-        if current_index + 1 < len(lesson_ids) and lesson_ids[current_index + 1] == new_lesson_id:
-            progress.current_lesson_id = new_lesson_id
-        else:
-            return jsonify({"error": "Invalid lesson progression"}), 400
+        # Allow progression to the next lesson in sequence
+    if current_index + 1 < len(lesson_ids):
+        progress.current_lesson_id = lesson_ids[current_index + 1]  # Always set to the next lesson
+    else:
+        return jsonify({"error": "No more lessons available"}), 400  # No more lessons to progress
+
+    db.session.commit()
+    return jsonify({"message": "Progress updated", "new_lesson_id": progress.current_lesson_id})
+
 
     db.session.commit()
     return jsonify({"message": "Progress updated", "new_lesson_id": progress.current_lesson_id, "new_chapter_id": progress.current_chapter_id})
