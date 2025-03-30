@@ -100,19 +100,11 @@ class Quiz(db.Model):
     chapter_id = db.Column(db.Integer, db.ForeignKey('chapter.chapter_id'), nullable=False)
     questions = db.Column(db.JSON, nullable=False)
 
-class UserLessonProgress(db.Model):
+class UserCurrentProgress(db.Model):
     progress_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'), nullable=False)
-    lesson_id = db.Column(db.Integer, db.ForeignKey('lesson.lesson_id'), nullable=False)
-    completed = db.Column(db.Boolean, default=False)
-    completed_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
-
-class UserQuizProgress(db.Model):
-    progress_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'), nullable=False)
-    quiz_id = db.Column(db.Integer, db.ForeignKey('quiz.quiz_id'), nullable=False)
-    score = db.Column(db.Integer)
-    passed = db.Column(db.Boolean, default=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'), unique=True, nullable=False)
+    current_chapter_id = db.Column(db.Integer, db.ForeignKey('chapter.chapter_id'), nullable=False)
+    current_lesson_id = db.Column(db.Integer, db.ForeignKey('lesson.lesson_id'), nullable=False)
 
 
 @app.route('/add_lesson', methods=['POST'])
@@ -170,45 +162,93 @@ def add_chapter():
 
     return jsonify({"message": "Chapter added successfully", "chapter_id": new_chapter.chapter_id}), 201
 
+@app.route('/api/progress/<int:user_id>', methods=['GET'])
+def get_user_progress(user_id):
+    progress = UserCurrentProgress.query.filter_by(user_id=user_id).first()
+    if not progress:
+        return jsonify({"error": "Progress not found"}), 404
+    return jsonify({
+        "user_id": user_id,
+        "current_chapter_id": progress.current_chapter_id,
+        "current_lesson_id": progress.current_lesson_id
+    })
 
-@app.route('/chapter-status/<int:user_id>/<int:chapter_id>', methods=['GET'])
-def check_chapter_completion(user_id, chapter_id):
-    total_lessons = Lesson.query.filter_by(chapter_id=chapter_id).count()
-    completed_lessons = UserLessonProgress.query.filter_by(user_id=user_id, completed=True).count()
-    
-    quiz = Quiz.query.filter_by(chapter_id=chapter_id).first()
-    quiz_completed = UserQuizProgress.query.filter_by(user_id=user_id, quiz_id=quiz.quiz_id, passed=True).first() if quiz else None
-    
-    if completed_lessons == total_lessons and quiz_completed:
-        return jsonify({"status": "completed"})
-    return jsonify({"status": "incomplete"})
+@app.route('/api/chapters', methods=['GET'])
+def get_chapters():
+    chapters = Chapter.query.all()
+    return jsonify([{ "chapter_id": c.chapter_id, "title": c.title } for c in chapters])
 
+@app.route('/api/lessons/<int:chapter_id>', methods=['GET'])
+def get_lessons(chapter_id):
+    lessons = Lesson.query.filter_by(chapter_id=chapter_id).all()
+    return jsonify([{ "lesson_id": l.lesson_id, "title": l.title } for l in lessons])
 
-
-@app.route('/submit-quiz', methods=['POST'])
-def submit_quiz():
+@app.route('/api/progress/update', methods=['POST'])
+def update_progress():
     data = request.json
-    user_id = data.get('user_id')
-    quiz_id = data.get('quiz_id')
-    user_answers = data.get('answers')
+    user_id = data.get("user_id")
+    new_lesson_id = data.get("lesson_id")
+    lesson = Lesson.query.get(new_lesson_id)
+    if not lesson:
+        return jsonify({"error": "Lesson not found"}), 404
+    progress = UserCurrentProgress.query.filter_by(user_id=user_id).first()
+    if not progress:
+        return jsonify({"error": "User progress not found"}), 404
+    progress.current_lesson_id = new_lesson_id
+    db.session.commit()
+    return jsonify({"message": "Progress updated", "new_lesson_id": new_lesson_id})
 
+@app.route('/api/progress/complete_quiz', methods=['POST'])
+def complete_quiz():
+    data = request.json
+    user_id = data.get("user_id")
+    quiz_id = data.get("quiz_id")
+    passed = data.get("passed")
+    if not passed:
+        return jsonify({"message": "Quiz not passed, progress remains the same"}), 200
     quiz = Quiz.query.get(quiz_id)
     if not quiz:
-        return jsonify({"message": "Quiz not found"}), 404
-
-    # Assume quiz.questions contains correct answers
-    questions = quiz.questions  # JSON stored questions
-    correct_answers = {q["id"]: q["answer"] for q in questions}
-    
-    score = sum(1 for qid, ans in user_answers.items() if correct_answers.get(qid) == ans)
-    passed = score >= 3  # Pass if at least 3/5 correct
-
-    # Store progress
-    quiz_progress = UserQuizProgress(user_id=user_id, quiz_id=quiz_id, score=score, passed=passed)
-    db.session.add(quiz_progress)
+        return jsonify({"error": "Quiz not found"}), 404
+    progress = UserCurrentProgress.query.filter_by(user_id=user_id).first()
+    if not progress:
+        return jsonify({"error": "User progress not found"}), 404
+    next_chapter = Chapter.query.filter(Chapter.chapter_id > progress.current_chapter_id).order_by(Chapter.chapter_id).first()
+    next_lesson = Lesson.query.filter_by(chapter_id=next_chapter.chapter_id).order_by(Lesson.lesson_id).first() if next_chapter else None
+    if next_chapter and next_lesson:
+        progress.current_chapter_id = next_chapter.chapter_id
+        progress.current_lesson_id = next_lesson.lesson_id
+    else:
+        return jsonify({"message": "No further chapters available"}), 200
     db.session.commit()
+    return jsonify({"message": "Chapter completed, moved to next chapter", "new_chapter_id": progress.current_chapter_id})
 
-    return jsonify({"message": "Quiz submitted", "score": score, "passed": passed})
+
+
+
+# @app.route('/submit-quiz', methods=['POST'])
+# def submit_quiz():
+#     data = request.json
+#     user_id = data.get('user_id')
+#     quiz_id = data.get('quiz_id')
+#     user_answers = data.get('answers')
+
+#     quiz = Quiz.query.get(quiz_id)
+#     if not quiz:
+#         return jsonify({"message": "Quiz not found"}), 404
+
+#     # Assume quiz.questions contains correct answers
+#     questions = quiz.questions  # JSON stored questions
+#     correct_answers = {q["id"]: q["answer"] for q in questions}
+    
+#     score = sum(1 for qid, ans in user_answers.items() if correct_answers.get(qid) == ans)
+#     passed = score >= 3  # Pass if at least 3/5 correct
+
+#     # Store progress
+#     quiz_progress = UserQuizProgress(user_id=user_id, quiz_id=quiz_id, score=score, passed=passed)
+#     db.session.add(quiz_progress)
+#     db.session.commit()
+
+#     return jsonify({"message": "Quiz submitted", "score": score, "passed": passed})
 
 
 
