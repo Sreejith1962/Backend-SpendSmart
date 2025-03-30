@@ -187,17 +187,7 @@ def submit_quiz():
     db.session.commit()
 
     return jsonify({"message": "Quiz submitted", "score": score, "passed": passed})
-@app.route('/chapter-status/<int:user_id>/<int:chapter_id>', methods=['GET'])
-def check_chapter_completion(user_id, chapter_id):
-    total_lessons = Lesson.query.filter_by(chapter_id=chapter_id).count()
-    completed_lessons = UserLessonProgress.query.filter_by(user_id=user_id, completed=True).count()
 
-    quiz = Quiz.query.filter_by(chapter_id=chapter_id).first()
-    quiz_progress = UserQuizProgress.query.filter_by(user_id=user_id, quiz_id=quiz.quiz_id, passed=True).first()
-
-    if completed_lessons == total_lessons and quiz_progress:
-        return jsonify({"status": "completed"})
-    return jsonify({"status": "incomplete"})
 
 
 
