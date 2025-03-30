@@ -110,6 +110,18 @@ class UserQuizProgress(db.Model):
     quiz_id = db.Column(db.Integer, db.ForeignKey('quiz.quiz_id'), nullable=False)
     score = db.Column(db.Integer)
     passed = db.Column(db.Boolean, default=False)
+@app.route("/add_lessons", methods=["POST"])
+def add_lessons():
+    data = request.get_json()
+    new_lesson = Lesson(
+        chapter_id=data["chapter_id"],
+        title=data["title"],
+        content=data["content"],
+        quiz_id=data["quiz_id"]
+    )
+    db.session.add(new_lesson)
+    db.session.commit()
+    return jsonify({"message": "Lesson added successfully!"}), 201
 @app.route('/lessons/<int:chapter_id>', methods=['GET'])
 def get_lessons(chapter_id):
     lessons = Lesson.query.filter_by(chapter_id=chapter_id).all()
