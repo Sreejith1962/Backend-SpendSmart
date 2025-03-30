@@ -162,7 +162,7 @@ def add_chapter():
 
     return jsonify({"message": "Chapter added successfully", "chapter_id": new_chapter.chapter_id}), 201
 
-@app.route('/api/progress/<int:user_id>', methods=['GET'])
+@app.route('/progress/<int:user_id>', methods=['GET'])
 def get_user_progress(user_id):
     progress = UserCurrentProgress.query.filter_by(user_id=user_id).first()
     if not progress:
@@ -173,17 +173,17 @@ def get_user_progress(user_id):
         "current_lesson_id": progress.current_lesson_id
     })
 
-@app.route('/api/chapters', methods=['GET'])
+@app.route('/chapters', methods=['GET'])
 def get_chapters():
     chapters = Chapter.query.all()
     return jsonify([{ "chapter_id": c.chapter_id, "title": c.title } for c in chapters])
 
-@app.route('/api/lessons/<int:chapter_id>', methods=['GET'])
+@app.route('/lessons/<int:chapter_id>', methods=['GET'])
 def get_lessons(chapter_id):
     lessons = Lesson.query.filter_by(chapter_id=chapter_id).all()
     return jsonify([{ "lesson_id": l.lesson_id, "title": l.title } for l in lessons])
 
-@app.route('/api/progress/update', methods=['POST'])
+@app.route('/progress/update', methods=['POST'])
 def update_progress():
     data = request.json
     user_id = data.get("user_id")
@@ -198,7 +198,7 @@ def update_progress():
     db.session.commit()
     return jsonify({"message": "Progress updated", "new_lesson_id": new_lesson_id})
 
-@app.route('/api/progress/complete_quiz', methods=['POST'])
+@app.route('/progress/complete_quiz', methods=['POST'])
 def complete_quiz():
     data = request.json
     user_id = data.get("user_id")
