@@ -186,47 +186,7 @@ def get_lessons(chapter_id):
 
 @app.route('/progress/update', methods=['POST'])
 def update_progress():
-    data = request.json
-    user_id = data.get("user_id")
-    new_lesson_id = data.get("lesson_id")
-
-    # Check if the lesson exists
-    lesson = Lesson.query.get(new_lesson_id)
-    if not lesson:
-        return jsonify({"error": "Lesson not found"}), 404
-
-    chapter_id = lesson.chapter_id  
-
-    # Get user progress
-    progress = UserCurrentProgress.query.filter_by(user_id=user_id).first()
-
-    if not progress:
-        # If no progress exists, start from the first lesson
-        first_lesson = Lesson.query.order_by(Lesson.lesson_id.asc()).first()
-        if not first_lesson:
-            return jsonify({"error": "No lessons found"}), 404
-        
-        progress = UserCurrentProgress(
-            user_id=user_id,
-            current_chapter_id=first_lesson.chapter_id,
-            current_lesson_id=first_lesson.lesson_id
-        )
-        db.session.add(progress)
-    else:
-        # Get all lessons for the user's current chapter
-        lessons_in_chapter = Lesson.query.filter_by(chapter_id=progress.current_chapter_id).order_by(Lesson.lesson_id.asc()).all()
-        lesson_ids = [l.lesson_id for l in lessons_in_chapter]
-
-        if new_lesson_id not in lesson_ids:
-            return jsonify({"error": "Invalid lesson for current chapter"}), 400
-
-        # Allow moving forward as long as the new lesson is further than the current one
-        if new_lesson_id > progress.current_lesson_id:
-            progress.current_lesson_id = new_lesson_id
-
-    db.session.commit()
-    return jsonify({"message": "Progress updated", "new_lesson_id": progress.current_lesson_id, "new_chapter_id": progress.current_chapter_id})
-
+    
     data = request.json
     user_id = data.get("user_id")
     new_lesson_id = data.get("lesson_id")
