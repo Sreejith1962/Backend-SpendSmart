@@ -25,8 +25,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)  # Now initialized correctly
 
-
-
+# Models
 class User(db.Model):
     user_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
@@ -37,6 +36,8 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
     location = db.Column(db.String(100), nullable=False)
     salary = db.Column(db.Numeric(10, 2), default=0)
+
+
 
 
 class LearningModule(db.Model):
@@ -92,17 +93,19 @@ class Lesson(db.Model):
     chapter_id = db.Column(db.Integer, db.ForeignKey('chapter.chapter_id'), nullable=False)
     title = db.Column(db.String(100), nullable=False)
     content = db.Column(db.Text, nullable=False)
+    quiz_id = db.Column(db.Integer, db.ForeignKey('quiz.quiz_id'), nullable=True)  # Link lessons to quizzes
+
+class Quiz(db.Model):
+    quiz_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    chapter_id = db.Column(db.Integer, db.ForeignKey('chapter.chapter_id'), nullable=False)
+    questions = db.Column(db.JSON, nullable=False)
 
 class UserLessonProgress(db.Model):
     progress_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'), nullable=False)
     lesson_id = db.Column(db.Integer, db.ForeignKey('lesson.lesson_id'), nullable=False)
     completed = db.Column(db.Boolean, default=False)
-
-class Quiz(db.Model):
-    quiz_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    chapter_id = db.Column(db.Integer, db.ForeignKey('chapter.chapter_id'), nullable=False)
-    questions = db.Column(db.JSON, nullable=False)  # Store questions as JSON
+    completed_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
 
 class UserQuizProgress(db.Model):
     progress_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -117,59 +120,49 @@ def add_lessons():
         chapter_id=data["chapter_id"],
         title=data["title"],
         content=data["content"],
-        quiz_id=data["quiz_id"]
+        quiz_id=data.get("quiz_id")  # Optional field
     )
     db.session.add(new_lesson)
     db.session.commit()
     return jsonify({"message": "Lesson added successfully!"}), 201
-@app.route('/lessons/<int:chapter_id>', methods=['GET'])
-def get_lessons(chapter_id):
-    lessons = Lesson.query.filter_by(chapter_id=chapter_id).all()
-    return jsonify([{"lesson_id": l.lesson_id, "title": l.title, "content": l.content} for l in lessons])
-
-@app.route('/lesson/complete', methods=['POST'])
-def complete_lesson():
-    data = request.json
-    user_id = data.get('user_id')
-    lesson_id = data.get('lesson_id')
-
-    existing_progress = UserLessonProgress.query.filter_by(user_id=user_id, lesson_id=lesson_id).first()
-    if existing_progress:
-        return jsonify({'message': 'Lesson already completed'}), 400
-
-    new_progress = UserLessonProgress(user_id=user_id, lesson_id=lesson_id, completed=True)
-    db.session.add(new_progress)
-    db.session.commit()
-
-    return jsonify({'message': 'Lesson marked as completed'}), 200
 import google.generativeai as genai
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
-
 @app.route('/generate-quiz/<int:chapter_id>', methods=['POST'])
 def generate_quiz(chapter_id):
-    # Fetch lesson contents
     lessons = Lesson.query.filter_by(chapter_id=chapter_id).all()
     lesson_texts = "\n\n".join([f"{l.title}: {l.content}" for l in lessons])
-
-    prompt = f"Create a 5-question multiple-choice quiz based on the following lessons:\n{lesson_texts}"
-
+    
+    prompt = f"""
+    Create a 5-question multiple-choice quiz based on these lessons:
+    {lesson_texts}
+    Output JSON format: [{{"id": 1, "question": "Q1", "options": ["A", "B", "C", "D"], "answer": "A"}}, ...]
+    """
+    
     response = genai.chat(prompt)
-    quiz_data = response.text  # Assuming response.text contains JSON questions
-
+    quiz_data = response.text  # Ensure it returns valid JSON
+    
     new_quiz = Quiz(chapter_id=chapter_id, questions=quiz_data)
     db.session.add(new_quiz)
     db.session.commit()
-
+    
     return jsonify({'message': 'Quiz generated successfully', 'quiz_id': new_quiz.quiz_id}), 201
-@app.route('/quiz/<int:chapter_id>', methods=['GET'])
-def get_quiz(chapter_id):
-    quiz = Quiz.query.filter_by(chapter_id=chapter_id).first()
-    if not quiz:
-        return jsonify({"message": "Quiz not found"}), 404
 
-    return jsonify({"quiz_id": quiz.quiz_id, "questions": quiz.questions})
+@app.route('/chapter-status/<int:user_id>/<int:chapter_id>', methods=['GET'])
+def check_chapter_completion(user_id, chapter_id):
+    total_lessons = Lesson.query.filter_by(chapter_id=chapter_id).count()
+    completed_lessons = UserLessonProgress.query.filter_by(user_id=user_id, completed=True).count()
+    
+    quiz = Quiz.query.filter_by(chapter_id=chapter_id).first()
+    quiz_completed = UserQuizProgress.query.filter_by(user_id=user_id, quiz_id=quiz.quiz_id, passed=True).first() if quiz else None
+    
+    if completed_lessons == total_lessons and quiz_completed:
+        return jsonify({"status": "completed"})
+    return jsonify({"status": "incomplete"})
+
+
+
 @app.route('/submit-quiz', methods=['POST'])
 def submit_quiz():
     data = request.json
