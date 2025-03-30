@@ -181,7 +181,7 @@ def get_chapters():
 @app.route('/lessons/<int:chapter_id>', methods=['GET'])
 def get_lessons(chapter_id):
     lessons = Lesson.query.filter_by(chapter_id=chapter_id).all()
-    return jsonify([{ "lesson_id": l.lesson_id, "title": l.title , "content": l.lesson.content} for l in lessons])
+    return jsonify([{ "lesson_id": l.lesson_id, "title": l.title , "content": l.content} for l in lessons])
 
 @app.route('/progress/update', methods=['POST'])
 def update_progress():
