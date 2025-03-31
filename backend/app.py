@@ -161,94 +161,108 @@ def add_chapter():
 
     return jsonify({"message": "Chapter added successfully", "chapter_id": new_chapter.chapter_id}), 201
 
-@app.route('/progress/<int:user_id>', methods=['GET'])
+@app.route('/chapters', methods=['GET'])
+def get_chapters():
+    chapters = Chapter.query.all()
+    return jsonify([{"chapter_id": c.chapter_id, "title": c.title} for c in chapters])
+
+@app.route('/lessons/<int:chapter_id>', methods=['GET'])
+def get_lessons(chapter_id):
+    lessons = Lesson.query.filter_by(chapter_id=chapter_id).all()
+    return jsonify([{"lesson_id": l.lesson_id, "title": l.title, "content": l.content} for l in lessons])
+
+@app.route('/user/progress/<int:user_id>', methods=['GET'])
 def get_user_progress(user_id):
-    progress = UserCurrentProgress.query.filter_by(user_id=user_id).first()
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
     
-    # If no progress exists, create a starting progress
+    progress = UserCurrentProgress.query.filter_by(user_id=user_id).first()
     if not progress:
-        first_lesson = Lesson.query.order_by(Lesson.lesson_id.asc()).first()
+        first_chapter = Chapter.query.first()
+        if not first_chapter:
+            return jsonify({"error": "No chapters available"}), 404
+        first_lesson = Lesson.query.filter_by(chapter_id=first_chapter.chapter_id).first()
         if not first_lesson:
-            return jsonify({"error": "No lessons available"}), 404
+            return jsonify({"error": "No lessons available in the first chapter"}), 404
         
         progress = UserCurrentProgress(
             user_id=user_id,
-            current_chapter_id=first_lesson.chapter_id,
+            current_chapter_id=first_chapter.chapter_id,
             current_lesson_id=first_lesson.lesson_id
         )
         db.session.add(progress)
         db.session.commit()
+    
+    return jsonify({
+        "user_id": progress.user_id,
+        "current_chapter_id": progress.current_chapter_id,
+        "current_lesson_id": progress.current_lesson_id
+    })
+@app.route('/update-progress/<int:user_id>', methods=['POST'])
+def update_progress(user_id):
+    progress = UserCurrentProgress.query.filter_by(user_id=user_id).first()
+    if not progress:
+        return jsonify({"error": "User progress not found"}), 404
 
+    current_lesson = Lesson.query.get(progress.current_lesson_id)
+    if not current_lesson:
+        return jsonify({"error": "Current lesson not found"}), 404
+    
+    next_lesson = Lesson.query.filter(
+        Lesson.chapter_id == current_lesson.chapter_id,
+        Lesson.lesson_id > current_lesson.lesson_id
+    ).order_by(Lesson.lesson_id.asc()).first()
+    
+    if next_lesson:
+        progress.current_lesson_id = next_lesson.lesson_id
+    else:
+        next_chapter = Chapter.query.filter(
+            Chapter.chapter_id > current_lesson.chapter_id
+        ).order_by(Chapter.chapter_id.asc()).first()
+        if next_chapter:
+            first_lesson = Lesson.query.filter_by(chapter_id=next_chapter.chapter_id).order_by(Lesson.lesson_id.asc()).first()
+            if first_lesson:
+                progress.current_chapter_id = next_chapter.chapter_id
+                progress.current_lesson_id = first_lesson.lesson_id
+            else:
+                return jsonify({"error": "Next chapter exists but has no lessons"}), 400
+        else:
+            return jsonify({"message": "No more lessons or chapters available"})
+    
+    db.session.commit()
     return jsonify({
         "user_id": user_id,
         "current_chapter_id": progress.current_chapter_id,
         "current_lesson_id": progress.current_lesson_id
     })
 
-@app.route('/chapters', methods=['GET'])
-def get_chapters():
-    chapters = Chapter.query.all()
-    return jsonify([{ "chapter_id": c.chapter_id, "title": c.title } for c in chapters])
-
-
-@app.route('/lessons/<int:chapter_id>', methods=['GET'])
-def get_lessons(chapter_id):
-    lessons = Lesson.query.filter_by(chapter_id=chapter_id).order_by(Lesson.lesson_id.asc()).all()
-    return jsonify([{"lesson_id": l.lesson_id, "title": l.title, "content": l.content} for l in lessons])
-
-
-@app.route('/progress/update', methods=['POST'])
-def update_progress():
-    
-    data = request.json
-    user_id = data.get("user_id")
-    new_lesson_id = data.get("lesson_id")
-
-    # Check if the lesson exists
-    lesson = Lesson.query.get(new_lesson_id)
-    if not lesson:
-        return jsonify({"error": "Lesson not found"}), 404
-
-    chapter_id = lesson.chapter_id  
-
-    # Get user progress
+@app.route('/skip-to-next-chapter/<int:user_id>', methods=['POST'])
+def skip_to_next_chapter(user_id):
     progress = UserCurrentProgress.query.filter_by(user_id=user_id).first()
-
     if not progress:
-        # No progress exists, start from first chapter/lesson
-        first_lesson = Lesson.query.filter_by(chapter_id=1).order_by(Lesson.lesson_id.asc()).first()
-        if not first_lesson:
-            return jsonify({"error": "No lessons found"}), 404
-        
-        progress = UserCurrentProgress(
-            user_id=user_id,
-            current_chapter_id=1,
-            current_lesson_id=first_lesson.lesson_id
-        )
-        db.session.add(progress)
-    else:
-        # Get the list of lessons in the current chapter
-        lessons_in_chapter = Lesson.query.filter_by(chapter_id=progress.current_chapter_id).order_by(Lesson.lesson_id.asc()).all()
-        lesson_ids = [l.lesson_id for l in lessons_in_chapter]
-
-        if new_lesson_id not in lesson_ids:
-            return jsonify({"error": "Invalid lesson for current chapter"}), 400
-
-        # Ensure the user is progressing to the correct next lesson
-        current_index = lesson_ids.index(progress.current_lesson_id) if progress.current_lesson_id in lesson_ids else -1
-
-        # Allow progression to the next lesson in sequence
-    if current_index + 1 < len(lesson_ids):
-        progress.current_lesson_id = lesson_ids[current_index + 1]  # Always set to the next lesson
-    else:
-        return jsonify({"error": "No more lessons available"}), 400  # No more lessons to progress
-
+        return jsonify({"error": "User progress not found"}), 404
+    
+    next_chapter = Chapter.query.filter(
+        Chapter.chapter_id > progress.current_chapter_id
+    ).order_by(Chapter.chapter_id.asc()).first()
+    
+    if not next_chapter:
+        return jsonify({"error": "No more chapters available"}), 400
+    
+    first_lesson = Lesson.query.filter_by(chapter_id=next_chapter.chapter_id).order_by(Lesson.lesson_id.asc()).first()
+    if not first_lesson:
+        return jsonify({"error": "Next chapter has no lessons"}), 400
+    
+    progress.current_chapter_id = next_chapter.chapter_id
+    progress.current_lesson_id = first_lesson.lesson_id
     db.session.commit()
-    return jsonify({"message": "Progress updated", "new_lesson_id": progress.current_lesson_id})
-
-
-    db.session.commit()
-    return jsonify({"message": "Progress updated", "new_lesson_id": progress.current_lesson_id, "new_chapter_id": progress.current_chapter_id})
+    
+    return jsonify({
+        "user_id": user_id,
+        "current_chapter_id": progress.current_chapter_id,
+        "current_lesson_id": progress.current_lesson_id
+    })
 
 @app.route('/progress/complete_quiz', methods=['POST'])
 def complete_quiz():
