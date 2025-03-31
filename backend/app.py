@@ -162,22 +162,29 @@ def add_chapter():
     return jsonify({"message": "Chapter added successfully", "chapter_id": new_chapter.chapter_id}), 201
 @app.route("/lesson/<int:chapter_id>/<int:lesson_id>", methods=["GET"])
 def get_lesson_details(chapter_id, lesson_id):
-    lesson = Lesson.query.filter_by(id=lesson_id, chapter_id=chapter_id).first()
+    lesson = Lesson.query.filter_by(lesson_id=lesson_id, chapter_id=chapter_id).first()
+
     if not lesson:
         return jsonify({"error": "Lesson not found"}), 404
 
-    next_lesson = Lesson.query.filter(
-        Lesson.chapter_id == chapter_id, Lesson.id > lesson_id
-    ).order_by(Lesson.id.asc()).first()
+    next_lesson = (
+        Lesson.query.filter(
+            Lesson.chapter_id == chapter_id,
+            Lesson.lesson_id > lesson_id
+        )
+        .order_by(Lesson.lesson_id.asc())
+        .first()
+    )
 
     return jsonify({
         "lesson": {
-            "id": lesson.id,
+            "lesson_id": lesson.lesson_id,
             "title": lesson.title,
             "content": lesson.content
         },
         "has_next": next_lesson is not None
     })
+
 @app.route('/chapters', methods=['GET'])
 def get_chapters():
     chapters = Chapter.query.all()
