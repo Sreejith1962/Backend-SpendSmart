@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 import os 
 import psycopg2
 import openai
+import json
 app = Flask(__name__)
 CORS(app)  
 DATABASE_URL = os.getenv("DATABASE_URL", "")
@@ -127,24 +128,33 @@ import google.generativeai as genai
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
+
+
 @app.route('/generate-quiz/<int:chapter_id>', methods=['POST'])
 def generate_quiz(chapter_id):
+    existing_quiz = Quiz.query.filter_by(chapter_id=chapter_id).first()
+    if existing_quiz:
+        return jsonify({"message": "Quiz already exists", "quiz_id": existing_quiz.quiz_id}), 200
+
     lessons = Lesson.query.filter_by(chapter_id=chapter_id).all()
     lesson_texts = "\n\n".join([f"{l.title}: {l.content}" for l in lessons])
-    
+
     prompt = f"""
     Create a 5-question multiple-choice quiz based on these lessons:
     {lesson_texts}
     Output JSON format: [{{"id": 1, "question": "Q1", "options": ["A", "B", "C", "D"], "answer": "A"}}, ...]
     """
-    
+
     response = genai.chat(prompt)
-    quiz_data = response.text  # Ensure it returns valid JSON
-    
+    try:
+        quiz_data = json.loads(response.text)  # Ensure valid JSON
+    except json.JSONDecodeError:
+        return jsonify({"error": "Invalid quiz format"}), 500
+
     new_quiz = Quiz(chapter_id=chapter_id, questions=quiz_data)
     db.session.add(new_quiz)
     db.session.commit()
-    
+
     return jsonify({'message': 'Quiz generated successfully', 'quiz_id': new_quiz.quiz_id}), 201
 
 @app.route('/add_chapter', methods=['POST'])
@@ -315,31 +325,34 @@ def complete_quiz():
 
 
 
-# @app.route('/submit-quiz', methods=['POST'])
-# def submit_quiz():
-#     data = request.json
-#     user_id = data.get('user_id')
-#     quiz_id = data.get('quiz_id')
-#     user_answers = data.get('answers')
+@app.route('/submit-quiz', methods=['POST'])
+def submit_quiz():
+    data = request.json
+    user_id = data.get('user_id')
+    quiz_id = data.get('quiz_id')
+    user_answers = data.get('answers')
 
-#     quiz = Quiz.query.get(quiz_id)
-#     if not quiz:
-#         return jsonify({"message": "Quiz not found"}), 404
+    quiz = Quiz.query.get(quiz_id)
+    if not quiz:
+        return jsonify({"error": "Quiz not found"}), 404
 
-#     # Assume quiz.questions contains correct answers
-#     questions = quiz.questions  # JSON stored questions
-#     correct_answers = {q["id"]: q["answer"] for q in questions}
-    
-#     score = sum(1 for qid, ans in user_answers.items() if correct_answers.get(qid) == ans)
-#     passed = score >= 3  # Pass if at least 3/5 correct
+    questions = quiz.questions  # JSON stored questions
+    correct_answers = {q["id"]: q["answer"] for q in questions}
 
-#     # Store progress
-#     quiz_progress = UserQuizProgress(user_id=user_id, quiz_id=quiz_id, score=score, passed=passed)
-#     db.session.add(quiz_progress)
-#     db.session.commit()
+    score = sum(1 for qid, ans in user_answers.items() if correct_answers.get(qid) == ans)
+    passed = score >= 3  # Pass if at least 3/5 correct
 
-#     return jsonify({"message": "Quiz submitted", "score": score, "passed": passed})
+    if passed:
+        progress = UserCurrentProgress.query.filter_by(user_id=user_id).first()
+        next_chapter = Chapter.query.filter(Chapter.chapter_id > progress.current_chapter_id).order_by(Chapter.chapter_id).first()
+        next_lesson = Lesson.query.filter_by(chapter_id=next_chapter.chapter_id).order_by(Lesson.lesson_id).first() if next_chapter else None
 
+        if next_chapter and next_lesson:
+            progress.current_chapter_id = next_chapter.chapter_id
+            progress.current_lesson_id = next_lesson.lesson_id
+        db.session.commit()
+
+    return jsonify({"message": "Quiz submitted", "score": score, "passed": passed})
 
 
 
