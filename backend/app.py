@@ -132,30 +132,36 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 @app.route('/generate-quiz/<int:chapter_id>', methods=['POST'])
 def generate_quiz(chapter_id):
-    existing_quiz = Quiz.query.filter_by(chapter_id=chapter_id).first()
-    if existing_quiz:
-        return jsonify({"message": "Quiz already exists", "quiz_id": existing_quiz.quiz_id}), 200
+    # Fetch lesson content from the database
+    lessons = Lesson.query(Lesson).filter_by(chapter_id=chapter_id).order_by(Lesson.order).all()
+    if not lessons:
+        return jsonify({"error": "No lessons found for this chapter"}), 404
 
-    lessons = Lesson.query.filter_by(chapter_id=chapter_id).all()
-    lesson_texts = "\n\n".join([f"{l.title}: {l.content}" for l in lessons])
+    # Combine all lesson content
+    full_text = "\n\n".join([lesson.content for lesson in lessons])
 
+    # Gemini AI prompt to generate a quiz
     prompt = f"""
-    Create a 5-question multiple-choice quiz based on these lessons:
-    {lesson_texts}
-    Output JSON format: [{{"id": 1, "question": "Q1", "options": ["A", "B", "C", "D"], "answer": "A"}}, ...]
+    You are an AI financial literacy tutor. Based on the following lesson content, generate a randomized quiz with 5 multiple-choice questions. Each question should have 4 answer options (A, B, C, D) and indicate the correct answer.
+
+    Lesson Content:
+    {full_text}
+
+    Return the output as JSON in the following format:
+    [
+        {{"question": "Question text?", "options": ["Option A", "Option B", "Option C", "Option D"], "answer": "A"}},
+        ...
+    ]
     """
 
-    response = genai.chat(prompt)
-    try:
-        quiz_data = json.loads(response.text)  # Ensure valid JSON
-    except json.JSONDecodeError:
-        return jsonify({"error": "Invalid quiz format"}), 500
+    # Call Gemini API
+    model = genai.GenerativeModel("gemini-1.5-pro")  # Use "gemini-pro" for basic usage
+    response = model.generate_content(prompt)
 
-    new_quiz = Quiz(chapter_id=chapter_id, questions=quiz_data)
-    db.session.add(new_quiz)
-    db.session.commit()
+    # Extract JSON data from response
+    quiz_data = response.text  # Gemini typically returns text, so parse as needed
 
-    return jsonify({'message': 'Quiz generated successfully', 'quiz_id': new_quiz.quiz_id}), 201
+    return jsonify({"quiz": quiz_data})
 
 @app.route('/add_chapter', methods=['POST'])
 def add_chapter():
