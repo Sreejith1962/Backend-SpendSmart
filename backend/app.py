@@ -133,7 +133,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 @app.route('/generate-quiz/<int:chapter_id>', methods=['POST'])
 def generate_quiz(chapter_id):
     # Fetch lesson content from the database
-    lessons = Lesson.query.filter_by(chapter_id=chapter_id).order_by(Lesson.order).all()  # Corrected line
+    lessons = Lesson.query.filter_by(chapter_id=chapter_id).all()  # Removed the ordering by Lesson.order
     if not lessons:
         return jsonify({"error": "No lessons found for this chapter"}), 404
 
@@ -162,6 +162,7 @@ def generate_quiz(chapter_id):
     quiz_data = response.text  # Gemini typically returns text, so parse as needed
 
     return jsonify({"quiz": quiz_data})
+
 
 @app.route('/add_chapter', methods=['POST'])
 def add_chapter():
