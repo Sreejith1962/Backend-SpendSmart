@@ -36,6 +36,75 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
     location = db.Column(db.String(100), nullable=False)
     salary = db.Column(db.Numeric(10, 2), default=0)
+    account_balance = db.Column(db.Numeric(10, 2), default=0)
+    rent = db.Column(db.Numeric(10, 2), default=0)
+
+
+from apscheduler.schedulers.background import BackgroundScheduler
+
+
+# Models (Simplified for context)
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    salary = db.Column(db.Float)
+    rent = db.Column(db.Float)
+
+class AccountLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    balance = db.Column(db.Float)
+    last_updated = db.Column(db.DateTime)
+
+# === API Endpoint to Set Job (Salary + Rent) ===
+@app.route('/update-user-job', methods=['POST'])
+def update_user_job():
+    data = request.get_json()
+    user_id = data.get("user_id")
+    salary = data.get("salary")
+    rent = data.get("rent")
+
+    if not user_id or salary is None or rent is None:
+        return jsonify({"message": "Missing required data"}), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+
+    user.salary = salary
+    user.rent = rent
+
+    # Initialize AccountLog if not exists
+    existing_log = AccountLog.query.filter_by(user_id=user_id).first()
+    if not existing_log:
+        initial_balance = float(salary) - float(rent)
+        new_log = AccountLog(
+            user_id=user_id,
+            balance=initial_balance,
+            last_updated=datetime.now(timezone.utc)
+        )
+        db.session.add(new_log)
+
+    db.session.commit()
+    return jsonify({"message": "User salary and rent updated successfully"}), 200
+
+# === Scheduled Job to Add Salary - Rent Monthly ===
+def update_account_balances():
+    print("Running scheduled update...")
+    users = User.query.all()
+    for user in users:
+        log = AccountLog.query.filter_by(user_id=user.id).first()
+        if log:
+            net_gain = float(user.salary or 0) - float(user.rent or 0)
+            log.balance += net_gain
+            log.last_updated = datetime.now(timezone.utc)
+    db.session.commit()
+    print("Balances updated.")
+
+# Scheduler Setup
+scheduler = BackgroundScheduler()
+scheduler.add_job(update_account_balances, 'cron', day=1, hour=0, minute=0)
+scheduler.start()
+
 
 
 
@@ -459,7 +528,7 @@ def fetch_city_data(city_name):
         resdata = response.json()
 
         rent_min = next((item["min"] for item in resdata["prices"] if item["item_name"] == "One bedroom apartment outside of city centre"), None)
-        rent_max = next((item["max"] for item in resdata["prices"] if item["item_name"] == "Three bedroom apartment in city centre"), None)
+        rent_max = next((item["max"] for item in resdata["prices"] if item["item_name"] == "Three bedroom apartment outside of centre"), None)
         salary_min = next((item["min"] for item in resdata["prices"] if item["item_name"] == "Average Monthly Net Salary, After Tax"), None)
         salary_max = next((item["max"] for item in resdata["prices"] if item["item_name"] == "Average Monthly Net Salary, After Tax"), None)
 
@@ -515,7 +584,55 @@ def update_city():
     db.session.commit()
 
     return jsonify({"message": "City updated successfully", "city": city_name}), 200
+@app.route("/user/<int:user_id>/update_rent", methods=["PUT"])
+def update_user_rent(user_id):
+    data = request.get_json()
+    new_rent = data.get("rent")
 
+    if new_rent is None:
+        return jsonify({"error": "Missing 'rent' field"}), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    user.rent = (new_rent)
+    db.session.commit()
+
+    return jsonify({"message": f"Rent updated to ₹{user.rent} for user {user.username}"}), 200
+
+@app.route("/update_balances", methods=["POST"])
+def update_balances():
+    users = User.query.all()
+
+    for user in users:
+        salary = (user.salary or 0)
+        rent = (user.rent or 0)
+        balance =(user.account_balance or 0)
+
+        # Add salary
+        balance += salary
+        db.session.add(AccountLog(
+            user_id=user.user_id,
+            description="Biweekly Salary Credited",
+            amount=salary,
+            balance_after=balance
+        ))
+
+        # Deduct rent
+        balance -= rent
+        db.session.add(AccountLog(
+            user_id=user.user_id,
+            description="Biweekly Rent Deducted",
+            amount=-rent,
+            balance_after=balance
+        ))
+
+        # Save updated balance
+        user.account_balance = balance
+
+    db.session.commit()
+    return jsonify({"message": "User balances updated successfully"}), 200
 @app.route('/register', methods=['POST'])
 def register():
     data = request.json
