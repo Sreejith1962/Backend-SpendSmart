@@ -44,14 +44,11 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 
 # Models (Simplified for context)
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    salary = db.Column(db.Float)
-    rent = db.Column(db.Float)
+
 
 class AccountLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'))
     balance = db.Column(db.Float)
     last_updated = db.Column(db.DateTime)
 

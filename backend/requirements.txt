@@ -12,3 +12,4 @@ flask-migrate
 psycopg2
 openai
 google.generativeai
+apscheduler
