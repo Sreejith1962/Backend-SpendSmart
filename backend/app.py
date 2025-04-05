@@ -525,7 +525,7 @@ def fetch_city_data(city_name):
         resdata = response.json()
 
         rent_min = next((item["min"] for item in resdata["prices"] if item["item_name"] == "One bedroom apartment outside of city centre"), None)
-        rent_max = next((item["max"] for item in resdata["prices"] if item["item_name"] == "Three bedroom apartment outside of centre"), None)
+        rent_max = next((item["max"] for item in resdata["prices"] if item["item_name"] == "Three bedroom apartment outside of city centre"), None)
         salary_min = next((item["min"] for item in resdata["prices"] if item["item_name"] == "Average Monthly Net Salary, After Tax"), None)
         salary_max = next((item["max"] for item in resdata["prices"] if item["item_name"] == "Average Monthly Net Salary, After Tax"), None)
 
