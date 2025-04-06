@@ -670,6 +670,7 @@ def login():
             'email': user.email,
             'location': user.location,
             'experience_points': user.experience_points,
+            'balance':user.account_balance,
             'credit_score': user.credit_score,
             'salary': float(user.salary),
             'goals_list': goals_list
